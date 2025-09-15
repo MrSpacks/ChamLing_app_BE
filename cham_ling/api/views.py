@@ -1,3 +1,4 @@
+import requests
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -6,6 +7,22 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import User, Dictionary, Word
 from .serializers import LoginSerializer, UserSerializer, DictionarySerializer, WordSerializer
+from django.conf import settings
+
+def get_unsplash_image(query):
+    url = "https://api.unsplash.com/photos/random"
+    params = {
+        "client_id": settings.UNSPLASH_API_KEY,
+        "query": query,
+        "orientation": "landscape"  # Для обложек, можно менять
+    }
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        return data.get("urls", {}).get("regular")  # URL изображения
+    except requests.RequestException:
+        return None
 
 class LoginView(APIView):
     def post(self, request):
@@ -24,17 +41,40 @@ class DictionaryCreateView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        serializer = DictionarySerializer(data=request.data, context={'request': request})
+        data = request.data.copy()
+        # Предложить обложку на основе названия
+        if not data.get('cover_image'):
+            query = data.get('name', 'language dictionary')
+            image_url = get_unsplash_image(query)
+            if image_url:
+                data['cover_image'] = image_url
+        serializer = DictionarySerializer(data=data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         dictionary = serializer.save()
-        return Response({'id': dictionary.id, 'name': dictionary.name}, status=status.HTTP_201_CREATED)
+        return Response({'id': dictionary.id, 'name': dictionary.name, 'cover_image': dictionary.cover_image}, status=status.HTTP_201_CREATED)
 
 class WordCreateView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        serializer = WordSerializer(data=request.data, context={'request': request})
+        data = request.data.copy()
+        # Предложить изображение на основе слова
+        if not data.get('image_url'):
+            query = data.get('word', 'language')
+            image_url = get_unsplash_image(query)
+            if image_url:
+                data['image_url'] = image_url
+        serializer = WordSerializer(data=data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         word = serializer.save()
-        return Response({'id': word.id, 'word': word.word, 'translation': word.translation}, status=status.HTTP_201_CREATED)
+        return Response({'id': word.id, 'word': word.word, 'translation': word.translation, 'image_url': word.image_url}, status=status.HTTP_201_CREATED)
+
+class DictionaryListView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        dictionaries = Dictionary.objects.filter(owner=request.user)
+        serializer = DictionarySerializer(dictionaries, many=True)
+        return Response(serializer.data)

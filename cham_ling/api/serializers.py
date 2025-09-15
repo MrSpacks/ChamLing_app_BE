@@ -20,7 +20,7 @@ class LoginSerializer(serializers.Serializer):
 class DictionarySerializer(serializers.ModelSerializer):
     class Meta:
         model = Dictionary
-        fields = ['id', 'owner', 'name', 'description', 'source_lang', 'target_lang', 'price', 'is_temporary_access', 'temp_duration_days']
+        fields = ['id', 'owner', 'name', 'description', 'source_lang', 'target_lang', 'price', 'is_temporary_access', 'temp_duration_days', 'is_for_sale', 'cover_image']
         extra_kwargs = {
             'owner': {'read_only': True},
         }
@@ -28,6 +28,15 @@ class DictionarySerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         request = self.context.get('request')
         return Dictionary.objects.create(owner=request.user, **validated_data)
+
+    def validate(self, data):
+        # Дополнительная валидация на API-уровне
+        if data.get('is_for_sale'):
+            if not data.get('name'):
+                raise serializers.ValidationError("Название обязательно для словаря на продажу.")
+            if not data.get('description'):
+                raise serializers.ValidationError("Описание обязательно для словаря на продажу.")
+        return data
 
 class WordSerializer(serializers.ModelSerializer):
     class Meta:

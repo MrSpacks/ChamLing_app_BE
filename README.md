@@ -1,6 +1,9 @@
 # ChamLing_app_BE
 
-start venv source venv/bin/activate
+start project:
+source venv/bin/activate
+cd cham_ling
+python3 manage.py runserver
 
 # План разработки приложения для изучения языков (MVP)
 

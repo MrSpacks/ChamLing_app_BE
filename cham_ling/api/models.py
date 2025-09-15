@@ -1,6 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
-
+from django.core.exceptions import ValidationError
 class User(AbstractUser):
     # Добавляем уникальные related_name для групп и разрешений
     groups = models.ManyToManyField(
@@ -20,17 +20,28 @@ class User(AbstractUser):
 
 class Dictionary(models.Model):
     owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name='dictionaries')
-    name = models.CharField(max_length=100)
-    description = models.TextField(blank=True)
+    name = models.CharField(max_length=100)  # Обязательное
+    description = models.TextField(blank=True)  # Описание/темы, можно сделать обязательным для продажи
     source_lang = models.CharField(max_length=50)
     target_lang = models.CharField(max_length=50)
     price = models.DecimalField(max_digits=6, decimal_places=2, default=0.50)
     is_temporary_access = models.BooleanField(default=False)
     temp_duration_days = models.IntegerField(default=7, null=True, blank=True)
+    is_for_sale = models.BooleanField(default=False)  # Новый флаг: на продажу или нет
+    cover_image = models.URLField(blank=True)  # Обложка (URL, можно из S3/Unsplash)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return self.name
+
+    def clean(self):
+        # Валидация перед сохранением
+        if self.is_for_sale:
+            if not self.name:
+                raise ValidationError("Название обязательно для словаря на продажу.")
+            if not self.description:  # Или темы, если добавишь отдельное поле
+                raise ValidationError("Описание (темы) обязательно для словаря на продажу.")
+        super().clean()
 
 class Word(models.Model):
     dictionary = models.ForeignKey(Dictionary, on_delete=models.CASCADE, related_name='words')

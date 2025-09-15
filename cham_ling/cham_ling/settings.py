@@ -85,3 +85,4 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",  # Для React на локалке
 ]
 AUTH_USER_MODEL = 'api.User'
+UNSPLASH_API_KEY = config('UNSPLASH_API_KEY')
