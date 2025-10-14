@@ -10,7 +10,7 @@ or
 
 # not fast)
 
-1 start venv fo python - source .venv/bin/activate
+1 start venv fo python - source venv/bin/activate
 2 cd cham_ling
 3 start Django server - python manage.py runserver
 
