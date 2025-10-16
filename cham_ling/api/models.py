@@ -18,12 +18,12 @@ class User(AbstractUser):
         verbose_name='user permissions',
     )
 
-class Dictionary(models.Model):
-    owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name='dictionaries')
+class Dictionary(models.Model):  # Модель для словарей
+    owner = models.ForeignKey(User, on_delete=models.CASCADE,related_name='dictionaries') # Владелец словаря
     name = models.CharField(max_length=100)  # Обязательное
     description = models.TextField(blank=True)  # Описание/темы, можно сделать обязательным для продажи
-    source_lang = models.CharField(max_length=50)
-    target_lang = models.CharField(max_length=50)
+    source_lang = models.CharField(max_length=50) # Язык-источник
+    target_lang = models.CharField(max_length=50) # Язык-перевод
     price = models.DecimalField(max_digits=6, decimal_places=2, default=0.50)
     is_temporary_access = models.BooleanField(default=False)
     temp_duration_days = models.IntegerField(default=7, null=True, blank=True)
@@ -43,7 +43,7 @@ class Dictionary(models.Model):
                 raise ValidationError("Описание (темы) обязательно для словаря на продажу.")
         super().clean()
 
-class Word(models.Model):
+class Word(models.Model):  # Модель для слов в словаре
     dictionary = models.ForeignKey(Dictionary, on_delete=models.CASCADE, related_name='words')
     word = models.CharField(max_length=100)
     translation = models.CharField(max_length=100)
@@ -54,7 +54,7 @@ class Word(models.Model):
     def __str__(self):
         return f"{self.word} -> {self.translation}"
 
-class Purchase(models.Model):
+class Purchase(models.Model):  # Новая модель для покупок
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     dictionary = models.ForeignKey(Dictionary, on_delete=models.CASCADE)
     access_type = models.CharField(max_length=10, choices=[('permanent', 'Permanent'), ('temporary', 'Temporary')])
