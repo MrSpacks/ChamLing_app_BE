@@ -1,22 +1,33 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
+
 class User(AbstractUser):
-    # Добавляем уникальные related_name для групп и разрешений
+    """
+    Кастомная модель пользователя для проекта с продажей словарей.
+    Добавлен баланс для учёта покупок и продаж.
+    """
+    balance = models.DecimalField(
+        max_digits=10,  # до 9 999 999.99
+        decimal_places=2,
+        default=0.00,
+        help_text="Текущий баланс пользователя в условных единицах."
+    )
+
+    # Уникальные related_name, чтобы не конфликтовать с дефолтными
     groups = models.ManyToManyField(
         'auth.Group',
-        related_name='chamling_users',  # Уникальное имя, например, 'chamling_users'
+        related_name='api_users',
         blank=True,
-        help_text='The groups this user belongs to.',
-        verbose_name='groups',
     )
     user_permissions = models.ManyToManyField(
         'auth.Permission',
-        related_name='chamling_user_permissions',  # Уникальное имя, например, 'chamling_user_permissions'
+        related_name='api_user_permissions',
         blank=True,
-        help_text='Specific permissions for this user.',
-        verbose_name='user permissions',
     )
+
+    def __str__(self):
+        return f"{self.username} — баланс: {self.balance:.2f}"
 
 class Dictionary(models.Model):  # Модель для словарей
     owner = models.ForeignKey(User, on_delete=models.CASCADE,related_name='dictionaries') # Владелец словаря

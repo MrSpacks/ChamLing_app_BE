@@ -3,9 +3,14 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, generics
 from rest_framework_simplejwt.authentication import JWTAuthentication
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated , AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.conf import settings
+from django.contrib.auth import get_user_model
+from django.contrib.auth.hashers import make_password
+
+
+
 
 from .models import User, Dictionary, Word
 from .serializers import (
@@ -19,23 +24,33 @@ from .serializers import (
 # -------------------------------
 # Регистрация с JWT-авторизацией
 # -------------------------------
-class RegisterView(generics.CreateAPIView):
-    queryset = User.objects.all()
-    serializer_class = RegisterSerializer
 
-    def perform_create(self, serializer):
-        user = serializer.save()
+User = get_user_model()
+
+class RegisterView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        email = request.data.get('email')
+        password = request.data.get('password')
+
+        if not email or not password:
+            return Response({'detail': 'Email and password are required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if User.objects.filter(email=email).exists():
+            return Response({'detail': 'User with this email already exists.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = User.objects.create(
+            username=email,  # если username не используется отдельно
+            email=email,
+            password=make_password(password)
+        )
+
         refresh = RefreshToken.for_user(user)
-        self.token_data = {
-            "refresh": str(refresh),
-            "access": str(refresh.access_token),
-            "user": UserSerializer(user).data,
-        }
-
-    def create(self, request, *args, **kwargs):
-        response = super().create(request, *args, **kwargs)
-        return Response(self.token_data, status=status.HTTP_201_CREATED)
-
+        return Response({
+            'access': str(refresh.access_token),
+            'refresh': str(refresh)
+        }, status=status.HTTP_201_CREATED)
 
 # -------------------------------
 # Логин
@@ -102,7 +117,7 @@ class DictionaryCreateView(APIView):
 class WordCreateView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
-
+    permission_classes = [AllowAny]
     def post(self, request):
         data = request.data.copy()
         if not data.get('image_url'):

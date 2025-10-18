@@ -1,28 +1,33 @@
 from rest_framework import serializers
 from django.contrib.auth import authenticate
-from .models import User, Dictionary, Word
-
-class RegisterSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = User
-        fields = ['id', 'username', 'email', 'password']
-        extra_kwargs = {'password': {'write_only': True}}
-
-    def create(self, validated_data):
-        user = User.objects.create_user(**validated_data)
-        return user
+from .models import  Dictionary, Word
+from django.contrib.auth import get_user_model
+User = get_user_model()
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['id', 'username', 'email']
+        fields = ['id', 'email']
+
+class RegisterSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['email', 'password']
+        extra_kwargs = {'password': {'write_only': True}}
+
+    def create(self, validated_data):
+        user = User.objects.create_user(
+            email=validated_data['email'],
+            password=validated_data['password']
+        )
+        return user
 
 class LoginSerializer(serializers.Serializer):
-    username = serializers.CharField()
+    email = serializers.EmailField()
     password = serializers.CharField()
 
     def validate(self, data):
-        user = authenticate(username=data['username'], password=data['password'])
+        user = authenticate(email=data['email'], password=data['password'])
         if not user:
             raise serializers.ValidationError('Неверные учетные данные')
         return {'user': user}
