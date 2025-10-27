@@ -8,6 +8,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import make_password
+from django.contrib.auth import authenticate
 
 
 
@@ -31,19 +32,32 @@ class RegisterView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
+        username = request.data.get('username')
         email = request.data.get('email')
         password = request.data.get('password')
 
-        if not email or not password:
-            return Response({'detail': 'Email and password are required.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not username or not email or not password:
+            return Response(
+                {'detail': 'Username, email and password are required.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         if User.objects.filter(email=email).exists():
-            return Response({'detail': 'User with this email already exists.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {'detail': 'User with this email already exists.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
-        user = User.objects.create(
-            username=email,  # если username не используется отдельно
+        if User.objects.filter(username=username).exists():
+            return Response(
+                {'detail': 'User with this username already exists.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        user = User.objects.create_user(
+            username=username,
             email=email,
-            password=make_password(password)
+            password=password
         )
 
         refresh = RefreshToken.for_user(user)
@@ -56,16 +70,20 @@ class RegisterView(APIView):
 # Логин
 # -------------------------------
 class LoginView(APIView):
+    permission_classes = [AllowAny]
+
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        user = serializer.validated_data['user']
-        refresh = RefreshToken.for_user(user)
-        return Response({
-            'refresh': str(refresh),
-            'access': str(refresh.access_token),
-            'user': UserSerializer(user).data
-        }, status=status.HTTP_200_OK)
+        if serializer.is_valid():
+            user = serializer.validated_data['user']
+            refresh = RefreshToken.for_user(user)
+            return Response({
+                'access': str(refresh.access_token),
+                'refresh': str(refresh)
+            }, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
 
 
 # -------------------------------

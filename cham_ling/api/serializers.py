@@ -12,11 +12,12 @@ class UserSerializer(serializers.ModelSerializer):
 class RegisterSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['email', 'password']
+        fields = ['username', 'email', 'password']
         extra_kwargs = {'password': {'write_only': True}}
 
     def create(self, validated_data):
         user = User.objects.create_user(
+            username=validated_data['username'],
             email=validated_data['email'],
             password=validated_data['password']
         )
@@ -29,7 +30,7 @@ class LoginSerializer(serializers.Serializer):
     def validate(self, data):
         user = authenticate(email=data['email'], password=data['password'])
         if not user:
-            raise serializers.ValidationError('Неверные учетные данные')
+            raise serializers.ValidationError({'email': ['Invalid email or password.']})
         return {'user': user}
 
 class DictionarySerializer(serializers.ModelSerializer):
