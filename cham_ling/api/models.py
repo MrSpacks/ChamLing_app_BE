@@ -34,12 +34,12 @@ class Dictionary(models.Model):  # Модель для словарей
     name = models.CharField(max_length=100)  # Обязательное
     description = models.TextField(blank=True)  # Описание/темы, можно сделать обязательным для продажи
     source_lang = models.CharField(max_length=50) # Язык-источник
-    target_lang = models.CharField(max_length=50) # Язык-перевод
-    price = models.DecimalField(max_digits=6, decimal_places=2, default=0.50)
-    is_temporary_access = models.BooleanField(default=False)
-    temp_duration_days = models.IntegerField(default=7, null=True, blank=True)
-    is_for_sale = models.BooleanField(default=False)  # Новый флаг: на продажу или нет
-    cover_image = models.URLField(blank=True)  # Обложка (URL, можно из S3/Unsplash)
+    target_lang = models.CharField(max_length=50)  # Язык-перевод
+    price = models.DecimalField(max_digits=6, decimal_places=2, default=0.00)  # ← 0.00
+    allow_temporary_access = models.BooleanField(default=False)
+    temporary_days = models.PositiveIntegerField(default=7, null=True, blank=True)
+    is_for_sale = models.BooleanField(default=False)
+    cover_image = models.URLField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
