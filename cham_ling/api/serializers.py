@@ -34,23 +34,56 @@ class LoginSerializer(serializers.Serializer):
         return {'user': user}
 
 class DictionarySerializer(serializers.ModelSerializer):
+    cover_image_url = serializers.SerializerMethodField()
+    is_owner = serializers.SerializerMethodField()
+    word_count = serializers.SerializerMethodField()
+    
     class Meta:
         model = Dictionary
-        fields = ['id', 'owner', 'name', 'description', 'source_lang', 'target_lang', 'price', 'allow_temporary_access', 'temporary_days', 'is_for_sale', 'cover_image']
+        fields = ['id', 'owner', 'name', 'description', 'source_lang', 'target_lang', 'price', 'allow_temporary_access', 'temporary_days', 'is_for_sale', 'cover_image', 'cover_image_file', 'cover_image_url', 'is_owner', 'word_count', 'created_at']
         extra_kwargs = {
             'owner': {'read_only': True},
+            'cover_image_file': {'write_only': True, 'required': False},
         }
+    
+    def get_cover_image_url(self, obj):
+        """Возвращает URL изображения (из файла или URL поля)"""
+        if obj.cover_image_file:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.cover_image_file.url)
+            return obj.cover_image_file.url
+        return obj.cover_image if obj.cover_image else None
+    
+    def get_is_owner(self, obj):
+        """Проверяет является ли текущий пользователь владельцем"""
+        request = self.context.get('request')
+        if request and request.user:
+            return obj.owner == request.user
+        return False
+    
+    def get_word_count(self, obj):
+        """Возвращает количество слов в словаре"""
+        return obj.words.count()
 
     def create(self, validated_data):
         request = self.context.get('request')
         return Dictionary.objects.create(owner=request.user, **validated_data)
+    
+    def update(self, instance, validated_data):
+        """Обновление словаря"""
+        # Обновляем только переданные поля
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        return instance
 
     def validate(self, data):
         # Дополнительная валидация на API-уровне
         if data.get('is_for_sale'):
-            if not data.get('name'):
+            if not data.get('name') and not self.instance:
                 raise serializers.ValidationError("Название обязательно для словаря на продажу.")
-            if not data.get('description'):
+            if not data.get('description') and not self.instance:
                 raise serializers.ValidationError("Описание обязательно для словаря на продажу.")
         return data
 

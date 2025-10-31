@@ -114,18 +114,34 @@ class DictionaryCreateView(APIView):
 
     def post(self, request):
         data = request.data.copy()
-        if not data.get('cover_image'):
+        
+        # Если загружен файл - используем его, иначе проверяем URL
+        if request.FILES.get('cover_image_file'):
+            # Файл уже в request.FILES, не нужно обрабатывать
+            pass
+        elif not data.get('cover_image'):
+            # Если нет ни файла, ни URL - получаем из Unsplash
             query = data.get('name', 'language dictionary')
             image_url = get_unsplash_image(query)
             if image_url:
                 data['cover_image'] = image_url
+        
         serializer = DictionarySerializer(data=data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         dictionary = serializer.save()
+        
+        # Возвращаем URL изображения (из файла или URL)
+        cover_image_url = None
+        if dictionary.cover_image_file:
+            cover_image_url = request.build_absolute_uri(dictionary.cover_image_file.url)
+        elif dictionary.cover_image:
+            cover_image_url = dictionary.cover_image
+            
         return Response({
             'id': dictionary.id,
             'name': dictionary.name,
-            'cover_image': dictionary.cover_image
+            'cover_image': cover_image_url or dictionary.cover_image,
+            'cover_image_url': cover_image_url
         }, status=status.HTTP_201_CREATED)
 
 
@@ -164,3 +180,137 @@ class DictionaryListView(APIView):
         dictionaries = Dictionary.objects.filter(owner=request.user)
         serializer = DictionarySerializer(dictionaries, many=True)
         return Response(serializer.data)
+
+
+# -------------------------------
+# Marketplace - словари на продажу
+# -------------------------------
+class MarketplaceView(APIView):
+    permission_classes = [AllowAny]  # Публичный доступ
+
+    def get(self, request):
+        dictionaries = Dictionary.objects.filter(is_for_sale=True)
+        serializer = DictionarySerializer(dictionaries, many=True)
+        return Response(serializer.data)
+
+
+# -------------------------------
+# Детали словаря, обновление, удаление
+# -------------------------------
+class DictionaryDetailView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        """Получить детали словаря"""
+        try:
+            dictionary = Dictionary.objects.get(pk=pk)
+            # Пользователь может видеть только свои словари
+            if dictionary.owner != request.user:
+                # Проверяем покупки
+                from .models import Purchase
+                if not Purchase.objects.filter(user=request.user, dictionary=dictionary).exists():
+                    return Response(
+                        {'detail': 'You do not have access to this dictionary.'},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+            
+            serializer = DictionarySerializer(dictionary, context={'request': request})
+            return Response(serializer.data)
+        except Dictionary.DoesNotExist:
+            return Response(
+                {'detail': 'Dictionary not found.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    def put(self, request, pk):
+        """Обновить словарь (только владелец)"""
+        try:
+            dictionary = Dictionary.objects.get(pk=pk)
+            if dictionary.owner != request.user:
+                return Response(
+                    {'detail': 'You can only update your own dictionaries.'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            data = request.data.copy()
+            
+            # Обработка файла изображения
+            if request.FILES.get('cover_image_file'):
+                pass  # Файл уже в request.FILES
+            elif not data.get('cover_image') and not dictionary.cover_image_file:
+                # Если нет изображения - получаем из Unsplash
+                query = data.get('name', dictionary.name)
+                image_url = get_unsplash_image(query)
+                if image_url:
+                    data['cover_image'] = image_url
+            
+            serializer = DictionarySerializer(dictionary, data=data, partial=True, context={'request': request})
+            serializer.is_valid(raise_exception=True)
+            updated_dict = serializer.save()
+            
+            # Возвращаем URL изображения
+            cover_image_url = None
+            if updated_dict.cover_image_file:
+                cover_image_url = request.build_absolute_uri(updated_dict.cover_image_file.url)
+            elif updated_dict.cover_image:
+                cover_image_url = updated_dict.cover_image
+            
+            return Response({
+                'id': updated_dict.id,
+                'name': updated_dict.name,
+                'cover_image_url': cover_image_url
+            })
+        except Dictionary.DoesNotExist:
+            return Response(
+                {'detail': 'Dictionary not found.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    def delete(self, request, pk):
+        """Удалить словарь (только владелец)"""
+        try:
+            dictionary = Dictionary.objects.get(pk=pk)
+            if dictionary.owner != request.user:
+                return Response(
+                    {'detail': 'You can only delete your own dictionaries.'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            dictionary.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except Dictionary.DoesNotExist:
+            return Response(
+                {'detail': 'Dictionary not found.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+
+# -------------------------------
+# Слова словаря
+# -------------------------------
+class DictionaryWordsView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        """Получить слова словаря"""
+        try:
+            dictionary = Dictionary.objects.get(pk=pk)
+            # Пользователь может видеть слова только своих словарей или купленных
+            if dictionary.owner != request.user:
+                from .models import Purchase
+                if not Purchase.objects.filter(user=request.user, dictionary=dictionary).exists():
+                    return Response(
+                        {'detail': 'You do not have access to this dictionary.'},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+            
+            words = Word.objects.filter(dictionary=dictionary)
+            serializer = WordSerializer(words, many=True)
+            return Response(serializer.data)
+        except Dictionary.DoesNotExist:
+            return Response(
+                {'detail': 'Dictionary not found.'},
+                status=status.HTTP_404_NOT_FOUND
+            )

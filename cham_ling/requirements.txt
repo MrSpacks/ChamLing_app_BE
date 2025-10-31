@@ -8,6 +8,7 @@ djangorestframework_simplejwt==5.5.1
 gunicorn==21.2.0
 idna==3.10
 packaging==25.0
+Pillow==11.0.0
 psycopg2-binary==2.9.10
 PyJWT==2.10.1
 python-decouple==3.8

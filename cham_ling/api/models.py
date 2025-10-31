@@ -39,7 +39,8 @@ class Dictionary(models.Model):  # Модель для словарей
     allow_temporary_access = models.BooleanField(default=False)
     temporary_days = models.PositiveIntegerField(default=7, null=True, blank=True)
     is_for_sale = models.BooleanField(default=False)
-    cover_image = models.URLField(blank=True)
+    cover_image = models.URLField(blank=True)  # Для обратной совместимости
+    cover_image_file = models.ImageField(upload_to='dictionaries/covers/', blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
