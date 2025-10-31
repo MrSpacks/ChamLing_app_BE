@@ -132,10 +132,17 @@ REST_FRAMEWORK = {
 }
 
 # CORS настройки
+CORS_ALLOWED_ORIGINS_STR = config(
+    'CORS_ALLOWED_ORIGINS',
+    default='http://localhost:3000,http://127.0.0.1:3000'
+)
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",  # Для React на локалке
-    "http://127.0.0.1:3000",
+    origin.strip() for origin in CORS_ALLOWED_ORIGINS_STR.split(',') if origin.strip()
 ]
+
+# Разрешить все источники в разработке (НЕ для продакшена!)
+if DEBUG:
+    CORS_ALLOW_ALL_ORIGINS = True
 
 # Unsplash API ключ
 UNSPLASH_API_KEY = config('UNSPLASH_API_KEY', default='')

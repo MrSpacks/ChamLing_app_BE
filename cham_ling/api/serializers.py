@@ -37,10 +37,11 @@ class DictionarySerializer(serializers.ModelSerializer):
     cover_image_url = serializers.SerializerMethodField()
     is_owner = serializers.SerializerMethodField()
     word_count = serializers.SerializerMethodField()
+    is_purchased = serializers.SerializerMethodField()
     
     class Meta:
         model = Dictionary
-        fields = ['id', 'owner', 'name', 'description', 'source_lang', 'target_lang', 'price', 'allow_temporary_access', 'temporary_days', 'is_for_sale', 'cover_image', 'cover_image_file', 'cover_image_url', 'is_owner', 'word_count', 'created_at']
+        fields = ['id', 'owner', 'name', 'description', 'source_lang', 'target_lang', 'price', 'allow_temporary_access', 'temporary_days', 'is_for_sale', 'cover_image', 'cover_image_file', 'cover_image_url', 'is_owner', 'word_count', 'is_purchased', 'created_at']
         extra_kwargs = {
             'owner': {'read_only': True},
             'cover_image_file': {'write_only': True, 'required': False},
@@ -58,13 +59,21 @@ class DictionarySerializer(serializers.ModelSerializer):
     def get_is_owner(self, obj):
         """Проверяет является ли текущий пользователь владельцем"""
         request = self.context.get('request')
-        if request and request.user:
+        if request and request.user and request.user.is_authenticated:
             return obj.owner == request.user
         return False
     
     def get_word_count(self, obj):
         """Возвращает количество слов в словаре"""
         return obj.words.count()
+    
+    def get_is_purchased(self, obj):
+        """Проверяет купил ли текущий пользователь этот словарь"""
+        request = self.context.get('request')
+        if request and request.user and request.user.is_authenticated:
+            from .models import Purchase
+            return Purchase.objects.filter(user=request.user, dictionary=obj).exists()
+        return False
 
     def create(self, validated_data):
         request = self.context.get('request')

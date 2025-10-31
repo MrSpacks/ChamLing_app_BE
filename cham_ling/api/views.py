@@ -13,7 +13,7 @@ from django.contrib.auth import authenticate
 
 
 
-from .models import User, Dictionary, Word
+from .models import User, Dictionary, Word, Purchase
 from .serializers import (
     LoginSerializer,
     UserSerializer,
@@ -177,8 +177,19 @@ class DictionaryListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        dictionaries = Dictionary.objects.filter(owner=request.user)
-        serializer = DictionarySerializer(dictionaries, many=True)
+        # Получаем словари, где пользователь является владельцем
+        owned_dictionaries = Dictionary.objects.filter(owner=request.user)
+        
+        # Получаем словари, которые пользователь купил
+        purchased_dictionaries_ids = Purchase.objects.filter(
+            user=request.user
+        ).values_list('dictionary_id', flat=True)
+        purchased_dictionaries = Dictionary.objects.filter(id__in=purchased_dictionaries_ids)
+        
+        # Объединяем оба списка (используем distinct чтобы избежать дубликатов)
+        all_dictionaries = (owned_dictionaries | purchased_dictionaries).distinct()
+        
+        serializer = DictionarySerializer(all_dictionaries, many=True, context={'request': request})
         return Response(serializer.data)
 
 
@@ -187,10 +198,12 @@ class DictionaryListView(APIView):
 # -------------------------------
 class MarketplaceView(APIView):
     permission_classes = [AllowAny]  # Публичный доступ
+    authentication_classes = [JWTAuthentication]  # Поддерживаем аутентификацию для определения is_owner
 
     def get(self, request):
         dictionaries = Dictionary.objects.filter(is_for_sale=True)
-        serializer = DictionarySerializer(dictionaries, many=True)
+        # Передаем request в context для определения is_owner даже если пользователь не залогинен
+        serializer = DictionarySerializer(dictionaries, many=True, context={'request': request})
         return Response(serializer.data)
 
 
@@ -313,4 +326,86 @@ class DictionaryWordsView(APIView):
             return Response(
                 {'detail': 'Dictionary not found.'},
                 status=status.HTTP_404_NOT_FOUND
+            )
+
+
+# -------------------------------
+# Покупка словаря
+# -------------------------------
+class PurchaseDictionaryView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        """Купить словарь (симуляция через код 1013)"""
+        try:
+            dictionary = Dictionary.objects.get(pk=pk)
+            
+            # Сначала проверяем код оплаты (ранняя валидация)
+            payment_code = request.data.get('payment_code')
+            
+            if not payment_code:
+                return Response(
+                    {'detail': 'Payment code is required.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            if payment_code != '1013':
+                return Response(
+                    {'detail': 'Invalid payment code. Please enter 1013.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Проверяем, что словарь на продажу
+            if not dictionary.is_for_sale:
+                return Response(
+                    {'detail': 'This dictionary is not for sale.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Проверяем, что пользователь не владелец
+            if dictionary.owner == request.user:
+                return Response(
+                    {'detail': 'You cannot buy your own dictionary.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Проверяем, не куплен ли уже словарь
+            if Purchase.objects.filter(user=request.user, dictionary=dictionary).exists():
+                return Response(
+                    {'detail': 'You have already purchased this dictionary.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Определяем тип доступа (permanent или temporary)
+            access_type = request.data.get('access_type', 'permanent')
+            
+            if access_type not in ['permanent', 'temporary']:
+                access_type = 'permanent'
+            
+            # Создаем покупку
+            purchase = Purchase.objects.create(
+                user=request.user,
+                dictionary=dictionary,
+                access_type=access_type
+            )
+            
+            return Response({
+                'id': purchase.id,
+                'dictionary_id': dictionary.id,
+                'dictionary_name': dictionary.name,
+                'access_type': purchase.access_type,
+                'purchased_at': purchase.purchased_at,
+                'message': 'Dictionary purchased successfully!'
+            }, status=status.HTTP_201_CREATED)
+            
+        except Dictionary.DoesNotExist:
+            return Response(
+                {'detail': 'Dictionary not found.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {'detail': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
