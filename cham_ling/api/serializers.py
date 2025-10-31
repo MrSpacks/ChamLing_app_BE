@@ -36,7 +36,7 @@ class LoginSerializer(serializers.Serializer):
 class DictionarySerializer(serializers.ModelSerializer):
     class Meta:
         model = Dictionary
-        fields = ['id', 'owner', 'name', 'description', 'source_lang', 'target_lang', 'price', 'is_temporary_access', 'temp_duration_days', 'is_for_sale', 'cover_image']
+        fields = ['id', 'owner', 'name', 'description', 'source_lang', 'target_lang', 'price', 'allow_temporary_access', 'temporary_days', 'is_for_sale', 'cover_image']
         extra_kwargs = {
             'owner': {'read_only': True},
         }

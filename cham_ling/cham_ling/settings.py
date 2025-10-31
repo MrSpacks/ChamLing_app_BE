@@ -146,5 +146,4 @@ SIMPLE_JWT = {
 AUTHENTICATION_BACKENDS = [
     'api.backends.EmailAuthBackend',
     'django.contrib.auth.backends.ModelBackend',
-    'api.backends.EmailAuthBackend',  # Если есть кастомный бэкенд
 ]

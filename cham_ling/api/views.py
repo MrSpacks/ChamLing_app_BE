@@ -135,7 +135,6 @@ class DictionaryCreateView(APIView):
 class WordCreateView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
-    permission_classes = [AllowAny]
     def post(self, request):
         data = request.data.copy()
         if not data.get('image_url'):
