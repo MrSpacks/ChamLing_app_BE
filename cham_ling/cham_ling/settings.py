@@ -1,3 +1,13 @@
+"""
+Настройки Django для проекта ChamLing.
+
+Этот модуль содержит все конфигурационные настройки приложения:
+- Безопасность (SECRET_KEY, DEBUG)
+- База данных (SQLite для разработки, PostgreSQL для продакшена)
+- REST Framework настройки
+- CORS настройки для работы с фронтендом
+- JWT токены настройки
+"""
 from pathlib import Path
 from decouple import config
 import os
@@ -11,6 +21,8 @@ SECRET_KEY = config('SECRET_KEY', default='your-secret-key-here')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', default=True, cast=bool)
 
+# Разрешённые хосты для приёма запросов
+# В продакшене указать конкретные домены!
 ALLOWED_HOSTS = ['*']
 
 # Application definition
@@ -60,7 +72,8 @@ WSGI_APPLICATION = 'cham_ling.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.0/ref/settings/#databases
 if 'RDS_HOSTNAME' in os.environ:
-    # Для AWS Elastic Beanstalk с RDS
+    # Настройки для AWS Elastic Beanstalk с RDS PostgreSQL
+    # Переменные окружения устанавливаются автоматически EB при подключении RDS
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
@@ -72,7 +85,8 @@ if 'RDS_HOSTNAME' in os.environ:
         }
     }
 else:
-    # Для локальной разработки с SQLite
+    # Настройки для локальной разработки с SQLite
+    # SQLite файл хранится в корне проекта (db.sqlite3)
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
@@ -118,10 +132,11 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 # https://docs.djangoproject.com/en/5.0/ref/settings/#default-auto-field
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# Кастомная модель пользователя
+# Кастомная модель пользователя (расширенная с полем balance)
 AUTH_USER_MODEL = 'api.User'
 
 # REST Framework настройки
+# Используется JWT аутентификация для всех API endpoints
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
@@ -131,7 +146,8 @@ REST_FRAMEWORK = {
     ),
 }
 
-# CORS настройки
+# CORS настройки для работы с фронтендом
+# Разрешаем запросы с фронтенда (React на localhost:3000)
 CORS_ALLOWED_ORIGINS_STR = config(
     'CORS_ALLOWED_ORIGINS',
     default='http://localhost:3000,http://127.0.0.1:3000'
@@ -140,20 +156,29 @@ CORS_ALLOWED_ORIGINS = [
     origin.strip() for origin in CORS_ALLOWED_ORIGINS_STR.split(',') if origin.strip()
 ]
 
-# Разрешить все источники в разработке (НЕ для продакшена!)
+# Разрешить все источники в режиме разработки (НЕ использовать в продакшене!)
+# В продакшене использовать CORS_ALLOWED_ORIGINS с конкретными доменами
 if DEBUG:
     CORS_ALLOW_ALL_ORIGINS = True
 
-# Unsplash API ключ
+# Unsplash API ключ для автоматического подбора изображений
+# Получить ключ можно на https://unsplash.com/developers
 UNSPLASH_API_KEY = config('UNSPLASH_API_KEY', default='')
 
-# Логин/регистрация настройки (для JWT)
+# JWT токены настройки
+# ACCESS_TOKEN_LIFETIME: Время жизни access токена (60 минут)
+# REFRESH_TOKEN_LIFETIME: Время жизни refresh токена (1 день)
+# ROTATE_REFRESH_TOKENS: Автоматическая ротация refresh токенов при использовании
 from datetime import timedelta
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
     'ROTATE_REFRESH_TOKENS': True,
 }
+
+# Настройки аутентификации
+# EmailAuthBackend: Позволяет логиниться по email вместо username
+# ModelBackend: Стандартная Django аутентификация по username
 AUTHENTICATION_BACKENDS = [
     'api.backends.EmailAuthBackend',
     'django.contrib.auth.backends.ModelBackend',

@@ -6,7 +6,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from unittest.mock import patch, Mock
 import json
 
-from .models import Dictionary, Word, Purchase
+from .models import Dictionary, Word, Purchase, LearningProgress
 
 User = get_user_model()
 
@@ -720,3 +720,261 @@ class RegisterSerializerTest(TestCase):
         self.assertEqual(user.username, 'newuser')
         self.assertEqual(user.email, 'newuser@example.com')
         self.assertTrue(user.check_password('testpass123'))
+
+
+# ==================== Тесты LearningProgress ====================
+
+class LearningProgressModelTest(TestCase):
+    """Тесты для модели LearningProgress"""
+    
+    def setUp(self):
+        """Настройка перед каждым тестом"""
+        self.user = User.objects.create_user(
+            username='testuser',
+            email='test@example.com',
+            password='testpass123'
+        )
+        self.dictionary = Dictionary.objects.create(
+            owner=self.user,
+            name='Test Dictionary',
+            source_lang='en',
+            target_lang='ru'
+        )
+        self.word1 = Word.objects.create(
+            dictionary=self.dictionary,
+            word='Hello',
+            translation='Привет'
+        )
+        self.word2 = Word.objects.create(
+            dictionary=self.dictionary,
+            word='World',
+            translation='Мир'
+        )
+    
+    def test_create_learning_progress(self):
+        """Тест создания прогресса изучения"""
+        progress = LearningProgress.objects.create(
+            user=self.user,
+            dictionary=self.dictionary
+        )
+        progress.learned_words.add(self.word1, self.word2)
+        
+        self.assertEqual(progress.user, self.user)
+        self.assertEqual(progress.dictionary, self.dictionary)
+        self.assertEqual(progress.learned_words.count(), 2)
+    
+    def test_learning_progress_str(self):
+        """Тест строкового представления прогресса"""
+        progress = LearningProgress.objects.create(
+            user=self.user,
+            dictionary=self.dictionary
+        )
+        progress.learned_words.add(self.word1)
+        
+        self.assertIn(self.user.username, str(progress))
+        self.assertIn(self.dictionary.name, str(progress))
+    
+    def test_learning_progress_unique_together(self):
+        """Тест уникальности прогресса для пары user-dictionary"""
+        LearningProgress.objects.create(
+            user=self.user,
+            dictionary=self.dictionary
+        )
+        
+        # Попытка создать второй прогресс должна вызвать IntegrityError
+        from django.db import IntegrityError
+        with self.assertRaises(IntegrityError):
+            LearningProgress.objects.create(
+                user=self.user,
+                dictionary=self.dictionary
+            )
+    
+    def test_get_progress_percentage(self):
+        """Тест вычисления процента прогресса"""
+        progress = LearningProgress.objects.create(
+            user=self.user,
+            dictionary=self.dictionary
+        )
+        progress.learned_words.add(self.word1)
+        
+        # Из 2 слов изучено 1 = 50%
+        percentage = progress.get_progress_percentage()
+        self.assertEqual(percentage, 50)
+    
+    def test_get_progress_percentage_empty(self):
+        """Тест процента прогресса когда слов нет"""
+        progress = LearningProgress.objects.create(
+            user=self.user,
+            dictionary=self.dictionary
+        )
+        
+        # Нет изученных слов = 0%
+        percentage = progress.get_progress_percentage()
+        self.assertEqual(percentage, 0)
+    
+    def test_get_progress_percentage_complete(self):
+        """Тест процента прогресса когда все слова изучены"""
+        progress = LearningProgress.objects.create(
+            user=self.user,
+            dictionary=self.dictionary
+        )
+        progress.learned_words.add(self.word1, self.word2)
+        
+        # Все слова изучены = 100%
+        percentage = progress.get_progress_percentage()
+        self.assertEqual(percentage, 100)
+
+
+class LearningProgressViewTest(APITestCase):
+    """Тесты для LearningProgressView"""
+    
+    def setUp(self):
+        """Настройка перед каждым тестом"""
+        self.client = APIClient()
+        self.user = User.objects.create_user(
+            username='testuser',
+            email='test@example.com',
+            password='testpass123'
+        )
+        self.dictionary = Dictionary.objects.create(
+            owner=self.user,
+            name='Test Dictionary',
+            source_lang='en',
+            target_lang='ru'
+        )
+        self.word1 = Word.objects.create(
+            dictionary=self.dictionary,
+            word='Hello',
+            translation='Привет'
+        )
+        self.word2 = Word.objects.create(
+            dictionary=self.dictionary,
+            word='World',
+            translation='Мир'
+        )
+        
+        # Создаем токен для аутентификации
+        refresh = RefreshToken.for_user(self.user)
+        self.token = str(refresh.access_token)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token}')
+    
+    def test_get_learning_progress_success(self):
+        """Тест успешного получения прогресса"""
+        # Создаем прогресс
+        progress = LearningProgress.objects.create(
+            user=self.user,
+            dictionary=self.dictionary
+        )
+        progress.learned_words.add(self.word1)
+        
+        url = f'/api/dictionaries/{self.dictionary.id}/progress/'
+        response = self.client.get(url)
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('learned_words', response.data)
+        self.assertEqual(len(response.data['learned_words']), 1)
+        self.assertEqual(response.data['learned_words'][0], self.word1.id)
+        self.assertIn('learned_words_count', response.data)
+        self.assertIn('progress_percentage', response.data)
+    
+    def test_get_learning_progress_creates_if_not_exists(self):
+        """Тест создания прогресса если его нет"""
+        url = f'/api/dictionaries/{self.dictionary.id}/progress/'
+        response = self.client.get(url)
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(LearningProgress.objects.filter(
+            user=self.user,
+            dictionary=self.dictionary
+        ).exists())
+    
+    def test_save_learning_progress_success(self):
+        """Тест успешного сохранения прогресса"""
+        url = f'/api/dictionaries/{self.dictionary.id}/progress/'
+        data = {
+            'learned_words': [self.word1.id, self.word2.id]
+        }
+        
+        response = self.client.post(url, data, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        progress = LearningProgress.objects.get(
+            user=self.user,
+            dictionary=self.dictionary
+        )
+        self.assertEqual(progress.learned_words.count(), 2)
+        self.assertIn(self.word1.id, response.data['learned_words'])
+        self.assertIn(self.word2.id, response.data['learned_words'])
+    
+    def test_update_learning_progress(self):
+        """Тест обновления прогресса"""
+        # Создаем начальный прогресс
+        progress = LearningProgress.objects.create(
+            user=self.user,
+            dictionary=self.dictionary
+        )
+        progress.learned_words.add(self.word1)
+        
+        url = f'/api/dictionaries/{self.dictionary.id}/progress/'
+        data = {
+            'learned_words': [self.word1.id, self.word2.id]
+        }
+        
+        response = self.client.post(url, data, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        progress.refresh_from_db()
+        self.assertEqual(progress.learned_words.count(), 2)
+    
+    def test_save_learning_progress_unauthorized(self):
+        """Тест сохранения прогресса без аутентификации"""
+        self.client.credentials()  # Убираем токен
+        
+        url = f'/api/dictionaries/{self.dictionary.id}/progress/'
+        data = {
+            'learned_words': [self.word1.id]
+        }
+        
+        response = self.client.post(url, data, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+    
+    def test_get_learning_progress_forbidden_dictionary(self):
+        """Тест получения прогресса для чужого словаря"""
+        other_user = User.objects.create_user(
+            username='otheruser',
+            email='other@example.com',
+            password='testpass123'
+        )
+        other_dictionary = Dictionary.objects.create(
+            owner=other_user,
+            name='Other Dictionary',
+            source_lang='en',
+            target_lang='ru'
+        )
+        
+        url = f'/api/dictionaries/{other_dictionary.id}/progress/'
+        response = self.client.get(url)
+        
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+    
+    def test_get_learning_progress_nonexistent_dictionary(self):
+        """Тест получения прогресса для несуществующего словаря"""
+        url = '/api/dictionaries/99999/progress/'
+        response = self.client.get(url)
+        
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+    
+    def test_learning_progress_progress_percentage(self):
+        """Тест правильности вычисления процента прогресса"""
+        url = f'/api/dictionaries/{self.dictionary.id}/progress/'
+        data = {
+            'learned_words': [self.word1.id]  # 1 из 2 слов = 50%
+        }
+        
+        response = self.client.post(url, data, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['progress_percentage'], 50)
+        self.assertEqual(response.data['learned_words_count'], 1)
+        self.assertEqual(response.data['total_words'], 2)

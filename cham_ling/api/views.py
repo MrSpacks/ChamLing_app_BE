@@ -1,34 +1,61 @@
+"""
+API View классы для обработки HTTP запросов.
+
+Этот модуль содержит все представления (views) для API endpoints:
+- Аутентификация (регистрация, логин)
+- Управление словарями (CRUD операции)
+- Управление словами
+- Магазин словарей (marketplace)
+- Покупка словарей
+"""
 import requests
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, generics
 from rest_framework_simplejwt.authentication import JWTAuthentication
-from rest_framework.permissions import IsAuthenticated , AllowAny
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import make_password
 from django.contrib.auth import authenticate
 
-
-
-
-from .models import User, Dictionary, Word, Purchase
+from .models import User, Dictionary, Word, Purchase, LearningProgress
 from .serializers import (
     LoginSerializer,
     UserSerializer,
+    UserProfileSerializer,
     DictionarySerializer,
     WordSerializer,
     RegisterSerializer,
+    LearningProgressSerializer,
 )
-
-# -------------------------------
-# Регистрация с JWT-авторизацией
-# -------------------------------
 
 User = get_user_model()
 
+
 class RegisterView(APIView):
+    """
+    API endpoint для регистрации новых пользователей.
+
+    Создаёт нового пользователя и возвращает JWT токены (access и refresh)
+    для автоматической авторизации после регистрации.
+
+    Methods:
+        post(request): Создаёт нового пользователя и возвращает токены.
+
+    Request Body:
+        - username: Имя пользователя (обязательно, уникально)
+        - email: Email пользователя (обязательно, уникален)
+        - password: Пароль пользователя (обязательно)
+
+    Returns:
+        - 201 CREATED: Успешная регистрация с токенами
+        - 400 BAD_REQUEST: Ошибка валидации (email/username уже существует)
+
+    Permissions:
+        AllowAny - доступно всем пользователям.
+    """
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -66,10 +93,28 @@ class RegisterView(APIView):
             'refresh': str(refresh)
         }, status=status.HTTP_201_CREATED)
 
-# -------------------------------
-# Логин
-# -------------------------------
+
 class LoginView(APIView):
+    """
+    API endpoint для авторизации существующих пользователей.
+
+    Проверяет учётные данные пользователя и возвращает JWT токены
+    (access и refresh) для доступа к защищённым API endpoints.
+
+    Methods:
+        post(request): Аутентифицирует пользователя и возвращает токены.
+
+    Request Body:
+        - email: Email пользователя (обязательно)
+        - password: Пароль пользователя (обязательно)
+
+    Returns:
+        - 200 OK: Успешный логин с токенами
+        - 400 BAD_REQUEST: Неверные учётные данные
+
+    Permissions:
+        AllowAny - доступно всем пользователям.
+    """
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -84,12 +129,23 @@ class LoginView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-
-
-# -------------------------------
-# Подбор изображения для словаря
-# -------------------------------
 def get_unsplash_image(query):
+    """
+    Получает изображение из Unsplash API по запросу.
+
+    Используется для автоматического подбора обложек словарей
+    и изображений для слов, если пользователь не загрузил свои.
+
+    Args:
+        query (str): Поисковый запрос для изображения (например, "language dictionary").
+
+    Returns:
+        str or None: URL изображения или None, если запрос не удался.
+
+    Note:
+        Требует настройки UNSPLASH_API_KEY в settings.py.
+        При ошибке запроса возвращает None без выбрасывания исключения.
+    """
     url = "https://api.unsplash.com/photos/random"
     params = {
         "client_id": settings.UNSPLASH_API_KEY,
@@ -105,10 +161,33 @@ def get_unsplash_image(query):
         return None
 
 
-# -------------------------------
-# Создание словаря
-# -------------------------------
 class DictionaryCreateView(APIView):
+    """
+    API endpoint для создания нового словаря.
+
+    Создаёт словарь с указанными параметрами. Если не указана обложка,
+    автоматически подбирает изображение из Unsplash API.
+
+    Methods:
+        post(request): Создаёт новый словарь для текущего пользователя.
+
+    Request Body:
+        - name: Название словаря (обязательно)
+        - description: Описание словаря
+        - source_lang: Язык-источник (обязательно)
+        - target_lang: Язык-перевод (обязательно)
+        - price: Цена для продажи (по умолчанию 0.00)
+        - is_for_sale: Выставить на продажу (по умолчанию False)
+        - cover_image: URL обложки (опционально)
+        - cover_image_file: Файл обложки (опционально)
+
+    Returns:
+        - 201 CREATED: Словарь создан успешно
+        - 400 BAD_REQUEST: Ошибка валидации данных
+
+    Permissions:
+        IsAuthenticated - требуется авторизация.
+    """
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
@@ -145,10 +224,31 @@ class DictionaryCreateView(APIView):
         }, status=status.HTTP_201_CREATED)
 
 
-# -------------------------------
-# Добавление слова
-# -------------------------------
 class WordCreateView(APIView):
+    """
+    API endpoint для добавления слова в словарь.
+
+    Создаёт новое слово с переводом в указанном словаре.
+    Если не указано изображение, автоматически подбирает из Unsplash.
+
+    Methods:
+        post(request): Добавляет слово в словарь.
+
+    Request Body:
+        - dictionary_id: ID словаря (обязательно, в теле запроса)
+        - word: Слово на языке-источнике (обязательно)
+        - translation: Перевод слова (обязательно)
+        - image_url: URL изображения для слова (опционально)
+        - example: Пример использования (опционально)
+
+    Returns:
+        - 201 CREATED: Слово добавлено успешно
+        - 400 BAD_REQUEST: Ошибка валидации данных
+        - 403 FORBIDDEN: Пользователь не владелец словаря
+
+    Permissions:
+        IsAuthenticated - требуется авторизация.
+    """
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
     def post(self, request):
@@ -169,10 +269,23 @@ class WordCreateView(APIView):
         }, status=status.HTTP_201_CREATED)
 
 
-# -------------------------------
-# Список словарей
-# -------------------------------
 class DictionaryListView(APIView):
+    """
+    API endpoint для получения списка словарей пользователя.
+
+    Возвращает все словари, к которым у пользователя есть доступ:
+    - Словари, созданные пользователем (owner)
+    - Словари, купленные пользователем (purchased)
+
+    Methods:
+        get(request): Возвращает список словарей пользователя.
+
+    Returns:
+        - 200 OK: Список словарей пользователя
+
+    Permissions:
+        IsAuthenticated - требуется авторизация.
+    """
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
@@ -193,10 +306,24 @@ class DictionaryListView(APIView):
         return Response(serializer.data)
 
 
-# -------------------------------
-# Marketplace - словари на продажу
-# -------------------------------
 class MarketplaceView(APIView):
+    """
+    API endpoint для получения списка словарей в магазине.
+
+    Возвращает все словари, выставленные на продажу (is_for_sale=True).
+    Доступен публично, но если пользователь авторизован,
+    в ответе указывается is_owner для каждого словаря.
+
+    Methods:
+        get(request): Возвращает список словарей на продажу.
+
+    Returns:
+        - 200 OK: Список словарей в магазине
+
+    Permissions:
+        AllowAny - доступно всем пользователям (публичный endpoint).
+        Поддерживает опциональную JWT аутентификацию для определения is_owner.
+    """
     permission_classes = [AllowAny]  # Публичный доступ
     authentication_classes = [JWTAuthentication]  # Поддерживаем аутентификацию для определения is_owner
 
@@ -207,10 +334,37 @@ class MarketplaceView(APIView):
         return Response(serializer.data)
 
 
-# -------------------------------
-# Детали словаря, обновление, удаление
-# -------------------------------
 class DictionaryDetailView(APIView):
+    """
+    API endpoint для получения, обновления и удаления словаря.
+
+    Предоставляет детальную информацию о словаре и позволяет
+    владельцу обновлять и удалять свои словари.
+
+    Methods:
+        get(request, pk): Получить детали словаря.
+        put(request, pk): Обновить словарь (только владелец).
+        delete(request, pk): Удалить словарь (только владелец).
+
+    Returns:
+        GET:
+        - 200 OK: Детали словаря
+        - 403 FORBIDDEN: Нет доступа к словарю
+        - 404 NOT_FOUND: Словарь не найден
+
+        PUT:
+        - 200 OK: Словарь обновлён
+        - 403 FORBIDDEN: Пользователь не владелец
+        - 404 NOT_FOUND: Словарь не найден
+
+        DELETE:
+        - 204 NO_CONTENT: Словарь удалён
+        - 403 FORBIDDEN: Пользователь не владелец
+        - 404 NOT_FOUND: Словарь не найден
+
+    Permissions:
+        IsAuthenticated - требуется авторизация.
+    """
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
@@ -299,10 +453,28 @@ class DictionaryDetailView(APIView):
             )
 
 
-# -------------------------------
-# Слова словаря
-# -------------------------------
 class DictionaryWordsView(APIView):
+    """
+    API endpoint для получения списка слов в словаре.
+
+    Возвращает все слова указанного словаря. Доступ к словам имеют:
+    - Владелец словаря (owner)
+    - Пользователи, купившие словарь (purchased)
+
+    Methods:
+        get(request, pk): Возвращает список слов словаря.
+
+    Args:
+        pk (int): ID словаря.
+
+    Returns:
+        - 200 OK: Список слов словаря
+        - 403 FORBIDDEN: Нет доступа к словарю
+        - 404 NOT_FOUND: Словарь не найден
+
+    Permissions:
+        IsAuthenticated - требуется авторизация.
+    """
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
@@ -329,10 +501,37 @@ class DictionaryWordsView(APIView):
             )
 
 
-# -------------------------------
-# Покупка словаря
-# -------------------------------
 class PurchaseDictionaryView(APIView):
+    """
+    API endpoint для покупки словаря.
+
+    Обрабатывает покупку словаря другим пользователем.
+    Симуляция платежа через код 1013 (для демонстрации).
+
+    Methods:
+        post(request, pk): Покупает словарь для текущего пользователя.
+
+    Args:
+        pk (int): ID словаря для покупки.
+
+    Request Body:
+        - payment_code: Код оплаты (обязательно, должен быть "1013")
+        - access_type: Тип доступа - 'permanent' или 'temporary' (по умолчанию 'permanent')
+
+    Returns:
+        - 201 CREATED: Словарь куплен успешно
+        - 400 BAD_REQUEST: Ошибка валидации (неверный код, словарь уже куплен и т.д.)
+        - 404 NOT_FOUND: Словарь не найден
+
+    Validations:
+        - Словарь должен быть на продажу (is_for_sale=True)
+        - Пользователь не должен быть владельцем словаря
+        - Словарь не должен быть уже куплен пользователем
+        - Код оплаты должен быть "1013"
+
+    Permissions:
+        IsAuthenticated - требуется авторизация.
+    """
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
@@ -409,3 +608,204 @@ class PurchaseDictionaryView(APIView):
                 {'detail': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+class UserProfileView(APIView):
+    """
+    API endpoint для получения и обновления профиля пользователя.
+
+    Позволяет получить информацию о текущем пользователе и обновить
+    настройки уведомлений (включить/выключить, установить время).
+
+    Methods:
+        get(request): Получить профиль текущего пользователя.
+        put(request): Обновить профиль и настройки пользователя.
+
+    Request Body (PUT):
+        - notifications_enabled: Включить/выключить уведомления (bool)
+        - notification_hour: Час для уведомления (0-23, int)
+        - notification_minute: Минута для уведомления (0-59, int)
+
+    Returns:
+        GET:
+        - 200 OK: Профиль пользователя
+
+        PUT:
+        - 200 OK: Обновлённый профиль пользователя
+        - 400 BAD_REQUEST: Ошибка валидации данных
+
+    Permissions:
+        IsAuthenticated - требуется авторизация.
+    """
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """
+        Получить профиль текущего пользователя.
+
+        Returns:
+            Response: Профиль пользователя с настройками уведомлений.
+        """
+        serializer = UserProfileSerializer(request.user)
+        return Response(serializer.data)
+
+    def put(self, request):
+        """
+        Обновить настройки профиля текущего пользователя.
+
+        Позволяет обновить настройки уведомлений (enabled, hour, minute).
+        Остальные поля (username, email, balance) доступны только для чтения.
+
+        Returns:
+            Response: Обновлённый профиль пользователя или ошибка валидации.
+        """
+        serializer = UserProfileSerializer(
+            request.user,
+            data=request.data,
+            partial=True
+        )
+        
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+class LearningProgressView(APIView):
+    """
+    API endpoint для получения и обновления прогресса изучения слов.
+
+    Позволяет получить текущий прогресс пользователя по словарю,
+    сохранить прогресс (изученные слова) и синхронизировать между устройствами.
+
+    Methods:
+        get(request, dictionary_id): Получить прогресс по словарю.
+        post(request, dictionary_id): Сохранить прогресс изучения (создать или обновить).
+        put(request, dictionary_id): Обновить прогресс изучения.
+
+    Request Body (POST/PUT):
+        - learned_words: Массив ID изученных слов (обязательно, список чисел)
+
+    Returns:
+        GET:
+        - 200 OK: Прогресс пользователя по словарю
+        - 404 NOT_FOUND: Прогресс не найден (можно создать через POST)
+
+        POST/PUT:
+        - 200 OK или 201 CREATED: Сохранённый прогресс
+        - 400 BAD_REQUEST: Ошибка валидации данных
+        - 403 FORBIDDEN: Нет доступа к словарю
+
+    Permissions:
+        IsAuthenticated - требуется авторизация.
+    """
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, dictionary_id):
+        """
+        Получить прогресс изучения словаря для текущего пользователя.
+
+        Returns:
+            Response: Прогресс пользователя или пустой объект если прогресс не найден.
+        """
+        try:
+            dictionary = Dictionary.objects.get(pk=dictionary_id)
+            
+            # Проверяем доступ к словарю
+            if dictionary.owner != request.user:
+                from .models import Purchase
+                if not Purchase.objects.filter(user=request.user, dictionary=dictionary).exists():
+                    return Response(
+                        {'detail': 'You do not have access to this dictionary.'},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+            
+            # Получаем или создаём прогресс
+            progress, created = LearningProgress.objects.get_or_create(
+                user=request.user,
+                dictionary=dictionary,
+                defaults={}
+            )
+            
+            serializer = LearningProgressSerializer(progress)
+            return Response(serializer.data)
+            
+        except Dictionary.DoesNotExist:
+            return Response(
+                {'detail': 'Dictionary not found.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    def post(self, request, dictionary_id):
+        """
+        Сохранить прогресс изучения словаря (создать или обновить).
+
+        Args:
+            dictionary_id: ID словаря.
+
+        Returns:
+            Response: Сохранённый прогресс изучения.
+        """
+        try:
+            dictionary = Dictionary.objects.get(pk=dictionary_id)
+            
+            # Проверяем доступ к словарю
+            if dictionary.owner != request.user:
+                from .models import Purchase
+                if not Purchase.objects.filter(user=request.user, dictionary=dictionary).exists():
+                    return Response(
+                        {'detail': 'You do not have access to this dictionary.'},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+            
+            # Получаем или создаём прогресс
+            progress, created = LearningProgress.objects.get_or_create(
+                user=request.user,
+                dictionary=dictionary,
+                defaults={}
+            )
+            
+            # Обновляем данные
+            data = request.data.copy()
+            data['dictionary'] = dictionary.id
+            
+            serializer = LearningProgressSerializer(
+                progress,
+                data=data,
+                partial=True,
+                context={'request': request}
+            )
+            
+            if serializer.is_valid():
+                serializer.save()
+                status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
+                return Response(serializer.data, status=status_code)
+            
+            return Response(
+                serializer.errors,
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        except Dictionary.DoesNotExist:
+            return Response(
+                {'detail': 'Dictionary not found.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    def put(self, request, dictionary_id):
+        """
+        Обновить прогресс изучения словаря.
+
+        Args:
+            dictionary_id: ID словаря.
+
+        Returns:
+            Response: Обновлённый прогресс изучения.
+        """
+        return self.post(request, dictionary_id)
